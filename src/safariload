@@ -143,37 +143,25 @@ while (my $record = $marc_file->next()) {
                     print("$goal: deleted matching bre " . $match->{'record'} . "\n");
                 }
             }
-            unless ($status eq 'd') {
-                my $xml = convert2marcxml($record);
-                my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record.xml.import', $authtoken, $xml, $source->source, 1);
-                if (ref($r) eq 'HASH') {
-                    print("$goal: " . $r->{textcode} . " importing xml\n");
-                }
-                else {
-                    print("$goal: " . $r->id . " " . $r->source . "\n");
-                    $count++;
-                }
-            }
         }
     }
-    else {
-         # Insert our new record.
-        unless ($status eq 'd') {
-            print("$goal ");
+
+    # Insert our new record.
+    unless ($status eq 'd') {
+        print("$goal ");
         # Convert the record to marcxml.
-            my $xml = convert2marcxml($record);
-            my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record.xml.import',
-                                                              $authtoken, $xml, $source->source, 1);
-            if (ref($r) eq 'HASH') {
-                print($r->{textcode} . "\n");
-            }
-            elsif (ref($r) eq 'Fieldmapper::biblio::record_entry') {
-                print($r->id . ' ' . $r->source . "\n");
-                $count++;
-            }
-            else {
-                print("$r\n");
-            }
+        my $xml = convert2marcxml($record);
+        my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record.xml.import',
+                                                          $authtoken, $xml, $source->source, 1);
+        if (ref($r) eq 'HASH') {
+            print($r->{textcode} . "\n");
+        }
+        elsif (ref($r) eq 'Fieldmapper::biblio::record_entry') {
+            print($r->id . ' ' . $r->source . "\n");
+            $count++;
+        }
+        else {
+            print("$r\n");
         }
     }
 }
