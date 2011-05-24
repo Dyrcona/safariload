@@ -1,0 +1,362 @@
+#!/usr/bin/perl
+# ---------------------------------------------------------------
+# Copyright (C) 2011 Merrimack Valley Library Consortium
+# Jason Stephenson <jstephenson@mvlc.org>
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# ---------------------------------------------------------------
+
+use strict;
+use Digest::MD5 qw/md5_hex/;
+use LWP;
+use HTTP::Cookies;
+use MARC::File::USMARC;
+use MARC::File::XML ( BinaryEncoding => 'utf-8' );
+use OpenSRF::System;
+use OpenSRF::Utils::JSON;
+use OpenILS::Utils::Fieldmapper;
+use OpenILS::Utils::CStoreEditor qw/:funcs/;
+use OpenILS::Application::AppUtils;
+use XML::XPath;
+
+#globals that can be set from the commmand line.
+my ($download_type, $config_file);
+
+foreach my $arg (@ARGV) {
+    if ($arg eq '--full') {
+        $download_type = 'full';
+    }
+    elsif ($arg =~ /^--config(?:_file)?=(.+)/) {
+        $config_file = $1;
+    }
+    else {
+        die("Unknown command line option: $arg");
+    }
+}
+
+# Use a default download type if not set:
+$download_type = 'update' unless ($download_type);
+# Use a default config location if not set:
+$config_file = (($ENV{'HOME'} =~ /\/$/) ? $ENV{'HOME'} : $ENV{'HOME'} . '/') . '.safariload.d/safariload.xml';
+
+my $config = XML::XPath->new(filename => $config_file);
+
+my $fname = download_file();
+
+# Prep the OpenSRF system:
+OpenSRF::System->bootstrap_client(config_file => $config->findvalue("/config/oils/bootstrap")->value());
+Fieldmapper->import(IDL => $config->findvalue("/config/oils/IDL")->value());
+OpenILS::Utils::CStoreEditor->init;
+
+# Now, we can login to OpenILS/OpenSRF:
+my $authtoken = oils_login();
+die("He's dead, Jim!") unless defined($authtoken);
+
+# Get the user object that we'll need for record creation.
+my $user = OpenILS::Application::AppUtils->simplereq('open-ils.auth', 'open-ils.auth.session.retrieve', $authtoken);
+
+# Lookup our bib_source's id
+my $source = OpenILS::Application::AppUtils->storagereq('open-ils.storage.direct.config.bib_source.search_where',
+                                                        { "source" => $config->findvalue("/config/oils/bib_source")->value() });
+
+# Delete everything if we're doing a full replacement load.
+delete_all_from_source($source) if ($download_type eq 'full');
+
+# Keep a count of the loaded records.
+my $count = 0;
+my $goal = 0;
+
+# We are now ready to process the downloaded MARC file.
+my $marc_file = MARC::File::USMARC->in($fname);
+
+while (my $record = $marc_file->next()) {
+    $goal++;
+# Get the record status to determine what to do with it.
+    my $status = substr($record->leader(), 5, 1);
+
+# Do our configured transformations:
+    unless ($status eq 'd') {
+        my $transforms = $config->find("/config/marc/*");
+        foreach my $trans ($transforms->get_nodelist()) {
+            next unless ($trans->isa('XML::XPath::Node::Element'));
+            # Currently, we only support a replace specification. I
+            # plan to add a delete and an add specification in the
+            # future.
+            if ($trans->getLocalName() eq 'replace') {
+                my $tag = $trans->getAttribute('tag');
+                next unless($tag);
+                my $ind1 = $trans->getAttribute('ind1');
+                my $ind2 = $trans->getAttribute('ind2');
+                my $subs = $config->find('subfield', $trans);
+                if ($subs->size()) {
+                    foreach my $sub ($subs->get_nodelist) {
+                        my $code = $sub->getAttribute('code');
+                        next unless ($code);
+                        my $match = $config->findvalue('match', $sub)->value();
+                        my $with = $config->findvalue('with', $sub)->value();
+                        foreach my $field ($record->field($tag)) {
+                            next if ($ind1 && $field->indicator(1) ne $ind1);
+                            next if ($ind2 && $field->indicator(2) ne $ind2);
+                            if ($match) {
+                                my $value = $field->subfield($code);
+                                if ($value) {
+                                    $value =~ s/$match/$with/;
+                                    $field->update($code => $value);
+                                }
+                            }
+                            else {
+                                $field->update($code => $with) if ($field->subfield($code));
+                            }
+                        }
+                    }
+                }
+                else {
+                    # We'll assume we have to have a control field if
+                    # we don't have a subfield.  This isn't
+                    # implemented, yet, but should be.
+                }
+            }
+        }
+    }
+
+# If updating, overlay matching records by deleting them first.
+    if ($download_type eq 'update') {
+        my $matches = get_matching_bibs($record);
+        if (ref($matches) eq 'HASH') {
+            print("$goal: " . $matches->{textcode} . " looking up match\n");
+        }
+        else {
+            foreach my $match (@$matches) {
+                my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record_entry.delete', $authtoken, $match->{'record'});
+                if (ref($r) eq 'HASH') {
+                    print("$goal: " . $r->{textcode} . " deleting matching bre" . $match->{'record'} . "\n");
+                }
+                else {
+                    print("$goal: deleted matching bre " . $match->{'record'} . "\n");
+                }
+            }
+            unless ($status eq 'd') {
+                my $xml = convert2marcxml($record);
+                my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record.xml.import', $authtoken, $xml, $source->source, 1);
+                if (ref($r) eq 'HASH') {
+                    print("$goal: " . $r->{textcode} . " importing xml\n");
+                }
+                else {
+                    print("$goal: " . $r->id . " " . $r->source . "\n");
+                    $count++;
+                }
+            }
+        }
+    }
+    else {
+         # Insert our new record.
+        unless ($status eq 'd') {
+            print("$goal ");
+        # Convert the record to marcxml.
+            my $xml = convert2marcxml($record);
+            my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record.xml.import',
+                                                              $authtoken, $xml, $source->source, 1);
+            if (ref($r) eq 'HASH') {
+                print($r->{textcode} . "\n");
+            }
+            elsif (ref($r) eq 'Fieldmapper::biblio::record_entry') {
+                print($r->id . ' ' . $r->source . "\n");
+                $count++;
+            }
+            else {
+                print("$r\n");
+            }
+        }
+    }
+}
+print("Imported $count of $goal records.\n");
+
+# Delete the working file if asked:
+my $delete_nodes = $config->find("/config/delete_files");
+unlink $fname if ($delete_nodes->size());
+
+################
+# Subroutines used above.
+
+sub download_file {
+# Filename for the raw marc from Safari.
+    my $filename = $config->findvalue("/config/working_directory")->value();
+    $filename .= "/" if ($filename && $filename !~ /\/$/);
+
+# Create a cookie jar and a user agent.
+    my $cookie_jar = HTTP::Cookies->new(file => $config->findvalue("/config/lwp/cookie_jar")->value());
+    my $lwp = LWP::UserAgent->new(cookie_jar => $cookie_jar);
+
+# Login to Safari BackOffice software:
+# Get config values, first:
+    my (%account, %login, %download);
+    my $bo_config = $config->find("/config/lwp/backoffice/*");
+    foreach my $node ($bo_config->get_nodelist()) {
+        next unless ($node->isa("XML::XPath::Node::Element"));
+        my $name = $node->getLocalName();
+        my $children = $node->getChildNodes();
+        if ($name eq "account") {
+            foreach my $child (@$children) {
+                next unless ($child->isa("XML::XPath::Node::Element"));
+                $account{$child->getLocalName()} = $child->string_value();
+            }
+        }
+        elsif ($name eq "login") {
+            foreach my $child (@$children) {
+                next unless ($child->isa("XML::XPath::Node::Element"));
+                $login{$child->getLocalName()} = $child->string_value();
+                if ($child->getLocalName() eq "url") {
+                    $login{'method'} = $child->getAttribute("method");
+                }
+            }
+        }
+        elsif ($name eq "download") {
+            foreach my $child ($config->find("$download_type/url", $node)->get_nodelist()) {
+                next unless ($child->isa('XML::XPath::Node::Element'));
+                $download{'url'} = $child->string_value();
+                $download{'method'} = $child->getAttribute('method');
+            }
+        }
+    }
+
+# Now, for the actual connection to BackOffice:
+    my $url = $login{'url'};
+    my $method = $login{'method'};
+    my $response;
+    delete $login{'url'};
+    delete $login{'method'};
+    if ($method eq 'post') {
+        $response = $lwp->post($url, \%login);
+    }
+    else {
+        my $i = 0;
+        foreach my $key (keys %login) {
+            $url .= sprintf("%s%s=%s", ($i++ == 0) ? '?' : '&', $key, $login{$key});
+        }
+        $response = $lwp->get($url);
+    }
+
+# If we logged in, then download and save the appropriate file.
+    if ($response->is_success) {
+        $url = $download{'url'};
+        $method = $download{'method'};
+        $url .= sprintf("&accountid=%d", $account{'id'});
+        if ($method eq 'get') {
+            my $r = $lwp->get($url);
+            if ($r->is_success) {
+                $filename .= (defined($r->filename)) ? $r->filename : "$download_type.mrc";
+                my $fh;
+                if (open($fh, ">$filename")) {
+                    print $fh $r->content;
+                    close($fh);
+                }
+                else {
+                    die ("She canno' do't, Captain!");
+                }
+            }
+            else {
+                die $r->status_line . "\n";
+            }
+        }
+    }
+    else {
+        die $response->status_line . "\n";
+    }
+    return $filename;
+}
+
+sub oils_login {
+
+    my %login;
+    
+    my $nodes = $config->find("/config/oils/login");
+    return undef unless ($nodes->size() == 1);
+
+    my $data = $nodes->get_node(1);
+    foreach my $child ($data->getChildNodes()) {
+        next unless ($child->isa('XML::XPath::Node::Element'));
+        $login{$child->getLocalName()} = $child->string_value() if ($child->string_value() ne '');
+    }
+
+    my $seed = OpenSRF::AppSession
+        ->create("open-ils.auth")
+        ->request( 'open-ils.auth.authenticate.init', $login{'username'} )
+        ->gather(1);
+
+    return undef unless $seed;
+
+    $login{'password'} = md5_hex($seed . md5_hex($login{'password'}));
+
+    my $response = OpenSRF::AppSession
+        ->create("open-ils.auth")
+        ->request( 'open-ils.auth.authenticate.complete', \%login)
+        ->gather(1);
+    
+    return undef unless $response;
+    
+    return $response->{payload}->{authtoken};
+}
+
+sub get_matching_bibs {
+    my $input = shift;
+    my $cn = $input->field('001')->data();
+    $cn =~ s/ +$//;
+    my $sid = $source->id;
+    my $json_query = <<"    JSON";
+{
+    "select": {"mfr":["record"]},
+    "from": {"mfr": {"bre": {}}},
+    "where": {
+        "+bre": {
+            "deleted": "f",
+            "source": $sid
+        },
+                "subfield": "a",
+                "tag": "035",
+                "value": {"like": "%$cn%"}
+    } 
+}
+    JSON
+    ;
+    my $q = OpenSRF::Utils::JSON->JSON2perl($json_query);
+    my $e = new_editor(authtoken => $authtoken);
+    my $recs = $e->json_query($q);
+    return $e->{event} unless ($recs);
+    return $recs;
+}
+
+sub delete_all_from_source {
+    my $bib_source = shift;
+    my $session = OpenSRF::AppSession->create('open-ils.storage');
+    my $request = $session->request('open-ils.storage.direct.biblio.record_entry.search_where', { "source" => $bib_source->id, 'deleted' => 'f' });
+    my @bibs;
+    while (my $response = $request->recv("timeout" => 30)) {
+        push(@bibs, $response->content);
+    }
+    my $goal = scalar @bibs;
+    my $count = 0;
+    foreach my $bib (@bibs) {
+        my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record_entry.delete', $authtoken, $bib->id);
+        $count++ unless (ref($r));
+    }
+    print("Deleted $count of $goal bibs.\n");
+}
+
+sub convert2marcxml {
+    my $input = shift;
+    (my $xml = $input->as_xml_record()) =~ s/\n//sog;
+    $xml =~ s/^<\?xml.+\?\s*>//go;
+    $xml =~ s/>\s+</></go;
+    $xml =~ s/\p{Cc}//go;
+    $xml = OpenILS::Application::AppUtils->entityize($xml);
+    $xml =~ s/[\x00-\x1f]//go;
+    return $xml;
+}

@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<config>
+  <!-- Where you want working files stored. If you want them deleted
+       at the end of the run, then add a <delete_files/> element in
+       this <config> section. -->
+  <working_directory></working_directory>
+  <!-- config "section" for connection to Open-ILS. -->
+  <oils>
+    <!-- Path to your opensrf_core.xml. This is usually, but not
+         always, /openils/conf/opensrf_core.xml. -->
+    <bootstrap></bootstrap>
+    <!-- Path to your Fieldmapper IDL. This is usually, but not
+         always, /openils/conf/opensrf.xml. -->
+    <IDL></IDL>
+    <!-- Name of the config.bib_source entry used for the Safari
+         records. This source must have the transcendent = TRUE flag
+         set and should not be used for any other records in your
+         database. The program will attempt to delete all records on
+         this source when a full update is requested. -->
+    <bib_source></bib_source>
+    <!-- Open-ILS login information. -->
+    <login>
+      <!-- Open-ILS username of the account used to create and delete
+           Safari records. This account must have CREATE_MARC and
+           DELETE_MARC permissions at the OU specified by the
+           workstation, below. -->
+      <username></username>
+      <!-- Password (in plain text) of the above account. -->
+      <password></password>
+      <!-- Workstation name, including OU shortname, used to determine
+           working location and permissions. This workstation must be
+           registered on the server or login will fail. -->
+      <workstation></workstation>
+    </login>
+  </oils>
+  <!-- Configuration for file download and the LWP user agent. -->
+  <lwp>
+    <!-- Full path of where to store cookies. -->
+    <cookie_jar></cookie_jar>
+    <!-- Configuration of the Safari Books Online backoffice site. -->
+    <backoffice>
+      <!-- Information about your backoffice account. -->
+      <account>
+	<!-- Your account's id number, provided by Safari. -->
+	<id></id>
+	<!-- Your account's name, provided by Safari. -->
+	<name></name>
+      </account>
+      <!-- Information to login to the backoffice site. -->
+      <login>
+	<!-- URL and HTTP request method used to login. You almost
+	     never want to change this value. -->
+	<url method="post">https://secure.safaribooksonline.com/bo3/BO.asp</url>
+	<!-- Username for the login form to be posted to the URL
+	     above. -->
+	<usr></usr>
+	<!-- Password for the login form to be posted to the URL
+	     above. -->
+	<pwd></pwd>
+      </login>
+      <!-- File download URLS. -->
+      <download>
+	<full>
+	  <!-- URL and HTTP method to retrieve a full update file. You
+	       almost never want to change this value. -->
+	  <url method="get">https://secure.safaribooksonline.com/bo3/marc.asp?full=1</url>
+	</full>
+	<update>
+	  <!-- URL and HTTP method to retrieve a partial update file
+	       with additions and deletions included. You almost never
+	       want to change this value. -->
+	  <url method="get">https://secure.safaribooksonline.com/bo3/marc.asp?add=1&amp;del=1</url>
+	</update>
+      </download>
+    </backoffice>
+  </lwp>
+  <!-- Configuration for MARC record manipulations. -->
+  <!-- We currently only support replacing subfield text or portions
+       thereof. In the future we intend to add the ability to delete
+       fields and add new fields. -->
+  <marc>
+    <!-- Replace a MARC subfield value with some other value. This is
+         a bit complicated, so documentation will come at a later date
+         and possibly in another document. In the meantime, the code
+         is your documentation for this feature. -->
+    <replace tag="" ind1="" ind2="">
+      <subfield code="">
+	<match></match>
+	<with></with>
+      </subfield>
+    </replace>
+  </marc>
+</config>
