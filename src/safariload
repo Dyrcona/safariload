@@ -264,7 +264,7 @@ sub download_file {
 sub oils_login {
 
     my %login;
-    
+
     my $nodes = $config->find("/config/oils/login");
     return undef unless ($nodes->size() == 1);
 
@@ -287,9 +287,9 @@ sub oils_login {
         ->create("open-ils.auth")
         ->request( 'open-ils.auth.authenticate.complete', \%login)
         ->gather(1);
-    
+
     return undef unless $response;
-    
+
     return $response->{payload}->{authtoken};
 }
 
