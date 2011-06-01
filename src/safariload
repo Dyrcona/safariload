@@ -45,7 +45,7 @@ foreach my $arg (@ARGV) {
 # Use a default download type if not set:
 $download_type = 'update' unless ($download_type);
 # Use a default config location if not set:
-$config_file = (($ENV{'HOME'} =~ /\/$/) ? $ENV{'HOME'} : $ENV{'HOME'} . '/') . '.safariload.d/safariload.xml';
+$config_file = (($ENV{'HOME'} =~ /\/$/) ? $ENV{'HOME'} : $ENV{'HOME'} . '/') . '.safariload.d/safariload.xml' unless ($config_file);
 
 my $config = XML::XPath->new(filename => $config_file);
 
