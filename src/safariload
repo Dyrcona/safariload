@@ -124,20 +124,20 @@ while (my $record = $marc_file->next()) {
                 }
                 elsif ($tag eq 'LDR') {
                     my $value = $record->leader();
-                    my $match = $config->find('match', $trans)->value();
-                    my $with = $config->find('with', $trans)->value();
+                    my $match = $config->findvalue('match', $trans)->value();
+                    my $with = $config->findvalue('with', $trans)->value();
                     if ($match) {
-                        $value =~ s/$match/$with/;
+                        $value =~ s/$match/$with/ee; # ugly double evaluation
                     }
                     else {
                         $value = $with;
                     }
                     $record->leader($value);
                 }
-                elsif (MARC::Field->is_control_tag($tag)) {
+                elsif (MARC::Field->is_controlfield_tag($tag)) {
                     my $field = $record->field($tag);
-                    my $match = $config->find('match', $trans)->value();
-                    my $with = $config->find('with', $trans)->value();
+                    my $match = $config->findvalue('match', $trans)->value();
+                    my $with = $config->findvalue('with', $trans)->value();
                     if ($field) {
                         if ($match) {
                             my $value = $field->data();
