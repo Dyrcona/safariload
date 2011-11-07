@@ -20,6 +20,7 @@ use LWP;
 use HTTP::Cookies;
 use MARC::File::USMARC;
 use MARC::File::XML ( BinaryEncoding => 'utf-8' );
+use MARC::Field;
 use OpenSRF::System;
 use OpenSRF::Utils::JSON;
 use OpenILS::Utils::Fieldmapper;
@@ -93,10 +94,10 @@ while (my $record = $marc_file->next()) {
             if ($trans->getLocalName() eq 'replace') {
                 my $tag = $trans->getAttribute('tag');
                 next unless($tag);
-                my $ind1 = $trans->getAttribute('ind1');
-                my $ind2 = $trans->getAttribute('ind2');
                 my $subs = $config->find('subfield', $trans);
                 if ($subs->size()) {
+                    my $ind1 = $trans->getAttribute('ind1');
+                    my $ind2 = $trans->getAttribute('ind2');
                     foreach my $sub ($subs->get_nodelist) {
                         my $code = $sub->getAttribute('code');
                         next unless ($code);
@@ -118,10 +119,41 @@ while (my $record = $marc_file->next()) {
                         }
                     }
                 }
-                else {
-                    # We'll assume we have to have a control field if
-                    # we don't have a subfield.  This isn't
-                    # implemented, yet, but should be.
+                elsif ($tag eq 'LDR') {
+                    my $value = $record->leader();
+                    my $match = $config->find('match', $trans)->value();
+                    my $with = $config->find('with', $trans)->value();
+                    if ($match) {
+                        $value =~ s/$match/$with/;
+                    }
+                    else {
+                        $value = $with;
+                    }
+                    $record->leader($value);
+                }
+                elsif (MARC::Field->is_control_tag($tag)) {
+                    my $field = $record->field($tag);
+                    my $match = $config->find('match', $trans)->value();
+                    my $with = $config->find('with', $trans)->value();
+                    if ($field) {
+                        if ($match) {
+                            my $value = $field->data();
+                            if ($value) {
+                                $value =~ s/$match/$with/;
+                                $field->update($value);
+                            }
+                        }
+                        else {
+                            $field->update($with);
+                        }
+                    }
+                    elsif (!$match) {
+                        # If the field doesn't exist and it doesn't
+                        # rely on a regex, we'll create it, thus for
+                        # control fields it acts like add or replace.
+                        $field = MARC::Field->new($tag, $with);
+                        $record->append_fields($field);
+                    }
                 }
             }
         }
