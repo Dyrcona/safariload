@@ -112,7 +112,7 @@ while (my $record = $marc_file->next()) {
                             if ($match) {
                                 my $value = $field->subfield($code);
                                 if ($value) {
-                                    $value =~ s/$match/$with/;
+                                    $value =~ s/$match/$with/ee;
                                     $field->update($code => $value);
                                 }
                             }
@@ -127,7 +127,7 @@ while (my $record = $marc_file->next()) {
                     my $match = $config->findvalue('match', $trans)->value();
                     my $with = $config->findvalue('with', $trans)->value();
                     if ($match) {
-                        $value =~ s/$match/$with/ee; # ugly double evaluation
+                        $value =~ s/$match/$with/ee;
                     }
                     else {
                         $value = $with;
@@ -142,20 +142,13 @@ while (my $record = $marc_file->next()) {
                         if ($match) {
                             my $value = $field->data();
                             if ($value) {
-                                $value =~ s/$match/$with/;
+                                $value =~ s/$match/$with/ee;
                                 $field->update($value);
                             }
                         }
                         else {
                             $field->update($with);
                         }
-                    }
-                    elsif (!$match) {
-                        # If the field doesn't exist and it doesn't
-                        # rely on a regex, we'll create it, thus for
-                        # control fields it acts like add or replace.
-                        $field = MARC::Field->new($tag, $with);
-                        $record->append_fields($field);
                     }
                 }
             }
