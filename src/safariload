@@ -29,7 +29,7 @@ use OpenILS::Application::AppUtils;
 use XML::XPath;
 
 #globals that can be set from the commmand line.
-my ($download_type, $config_file);
+my ($download_type, $config_file, $fname);
 
 foreach my $arg (@ARGV) {
     if ($arg eq '--full') {
@@ -37,6 +37,9 @@ foreach my $arg (@ARGV) {
     }
     elsif ($arg =~ /^--config(?:_file)?=(.+)/) {
         $config_file = $1;
+    }
+    elsif ($arg =~ /^--file=(.+)/) {
+        $fname = $1;
     }
     else {
         die("Unknown command line option: $arg");
@@ -50,7 +53,7 @@ $config_file = (($ENV{'HOME'} =~ /\/$/) ? $ENV{'HOME'} : $ENV{'HOME'} . '/') . '
 
 my $config = XML::XPath->new(filename => $config_file);
 
-my $fname = download_file();
+$fname = download_file() unless (defined($fname) && -f $fname);
 
 # Prep the OpenSRF system:
 OpenSRF::System->bootstrap_client(config_file => $config->findvalue("/config/oils/bootstrap")->value());
