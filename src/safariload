@@ -22,7 +22,6 @@ use MARC::File::USMARC;
 use MARC::File::XML ( BinaryEncoding => 'utf-8' );
 use MARC::Field;
 use OpenSRF::System;
-use OpenSRF::Utils::JSON;
 use OpenILS::Utils::Fieldmapper;
 use OpenILS::Utils::CStoreEditor qw/:funcs/;
 use OpenILS::Application::AppUtils;
@@ -324,25 +323,21 @@ sub oils_login {
 sub get_matching_bibs {
     my $input = shift;
     my $cn = $input->field('001')->data();
-    $cn =~ s/ +$//;
+    $cn =~ s/[^0-9]+//g;
     my $sid = $source->id;
-    my $json_query = <<"    JSON";
-{
-    "select": {"mfr":["record"]},
-    "from": {"mfr": {"bre": {}}},
-    "where": {
-        "+bre": {
-            "deleted": "f",
-            "source": $sid
-        },
-                "subfield": "a",
-                "tag": "035",
-                "value": {"like": "%$cn%"}
-    } 
-}
-    JSON
-    ;
-    my $q = OpenSRF::Utils::JSON->JSON2perl($json_query);
+    my $q =
+        {
+         'select' => { 'mfr' => [ 'record'] },
+         'from' => { 'mfr' => 'bre' },
+         'where' =>
+         {
+          'subfield' => 'a',
+          'tag' => '035',
+          'value' => { 'like' => '%' . $cn . '%' },
+          '+bre' => { 'deleted' => 'f', 'source' => $sid }
+         },
+         'distinct' => 'true'
+        };
     my $e = new_editor(authtoken => $authtoken);
     my $recs = $e->json_query($q);
     return $e->{event} unless ($recs);
