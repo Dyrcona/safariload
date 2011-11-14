@@ -175,7 +175,7 @@ while (my $record = $marc_file->next()) {
             foreach my $match (@$matches) {
                 my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record_entry.delete', $authtoken, $match->{'record'});
                 if (ref($r) eq 'HASH') {
-                    print("$goal: " . $r->{textcode} . " deleting matching bre" . $match->{'record'} . "\n");
+                    print("$goal: " . $r->{textcode} . " deleting matching bre " . $match->{'record'} . "\n");
                 }
                 else {
                     print("$goal: deleted matching bre " . $match->{'record'} . "\n");
