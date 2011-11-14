@@ -90,9 +90,9 @@ while (my $record = $marc_file->next()) {
         my $transforms = $config->find("/config/marc/*");
         foreach my $trans ($transforms->get_nodelist()) {
             next unless ($trans->isa('XML::XPath::Node::Element'));
-            # Currently, we only support a replace specification. I
-            # plan to add a delete and an add specification in the
-            # future.
+            # Currently, we only support a replace and subfield add
+            # specification. I plan to add field delete add
+            # specifications in the future.
             if ($trans->getLocalName() eq 'replace') {
                 my $tag = $trans->getAttribute('tag');
                 next unless($tag);
@@ -157,6 +157,30 @@ while (my $record = $marc_file->next()) {
                                 my $value = $ind->getAttribute('value');
                                 $field->update($which => $value);
                             }
+                        }
+                    }
+                }
+            }
+            elsif ($trans->getLocalName() eq "add") {
+                my $tag = $trans->getAttribute("tag");
+                next unless $tag;
+                # Currently, we only allow adding subfields, not whole
+                # fields. As a side effect, we also don't allow the
+                # addition of control fields, just yet.
+                next if (MARC::Field->is_controlfield_tag($tag));
+                my $ind1 = $trans->getAttribute('ind1');
+                my $ind2 = $trans->getAttribute('ind2');
+                my $subs = $config->find('subfield', $trans);
+                foreach my $field ($record->field($tag)) {
+                    next if ($ind1 && $field->indicator(1) ne $ind1);
+                    next if ($ind2 && $field->indicator(2) ne $ind2);
+                    if ($subs->size()) {
+                        foreach my $sub ($subs->get_nodelist) {
+                            my $code = $sub->getAttribute('code');
+                            next unless ($code);
+                            my $value = $config->findvalue('value', $sub)->value();
+                            next unless ($value);
+                            $field->add_subfields($code => $value);
                         }
                     }
                 }
