@@ -155,7 +155,6 @@ while (my $record = $marc_file->next()) {
                             foreach my $ind ($indicators->get_nodelist) {
                                 my $which = 'ind' . $ind->getAttribute('which');
                                 my $value = $ind->getAttribute('value');
-                                print("$which $value\n");
                                 $field->update($which => $value);
                             }
                         }
