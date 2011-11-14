@@ -96,32 +96,7 @@ while (my $record = $marc_file->next()) {
             if ($trans->getLocalName() eq 'replace') {
                 my $tag = $trans->getAttribute('tag');
                 next unless($tag);
-                my $subs = $config->find('subfield', $trans);
-                if ($subs->size()) {
-                    my $ind1 = $trans->getAttribute('ind1');
-                    my $ind2 = $trans->getAttribute('ind2');
-                    foreach my $sub ($subs->get_nodelist) {
-                        my $code = $sub->getAttribute('code');
-                        next unless ($code);
-                        my $match = $config->findvalue('match', $sub)->value();
-                        my $with = $config->findvalue('with', $sub)->value();
-                        foreach my $field ($record->field($tag)) {
-                            next if ($ind1 && $field->indicator(1) ne $ind1);
-                            next if ($ind2 && $field->indicator(2) ne $ind2);
-                            if ($match) {
-                                my $value = $field->subfield($code);
-                                if ($value) {
-                                    $value =~ s/$match/$with/ee;
-                                    $field->update($code => $value);
-                                }
-                            }
-                            else {
-                                $field->update($code => $with) if ($field->subfield($code));
-                            }
-                        }
-                    }
-                }
-                elsif ($tag eq 'LDR') {
+                if ($tag eq 'LDR') {
                     my $value = $record->leader();
                     my $match = $config->findvalue('match', $trans)->value();
                     my $with = $config->findvalue('with', $trans)->value();
@@ -147,6 +122,42 @@ while (my $record = $marc_file->next()) {
                         }
                         else {
                             $field->update($with);
+                        }
+                    }
+                }
+                else {
+                    my $ind1 = $trans->getAttribute('ind1');
+                    my $ind2 = $trans->getAttribute('ind2');
+                    my $subs = $config->find('subfield', $trans);
+                    my $indicators = $config->find('indicator', $trans);
+                    foreach my $field ($record->field($tag)) {
+                        next if ($ind1 && $field->indicator(1) ne $ind1);
+                        next if ($ind2 && $field->indicator(2) ne $ind2);
+                        if ($subs->size()) {
+                            foreach my $sub ($subs->get_nodelist) {
+                                my $code = $sub->getAttribute('code');
+                                next unless ($code);
+                                my $match = $config->findvalue('match', $sub)->value();
+                                my $with = $config->findvalue('with', $sub)->value();
+                                if ($match) {
+                                    my $value = $field->subfield($code);
+                                    if ($value) {
+                                        $value =~ s/$match/$with/ee;
+                                        $field->update($code => $value);
+                                    }
+                                }
+                                else {
+                                    $field->update($code => $with) if ($field->subfield($code));
+                                }
+                            }
+                        }
+                        if ($indicators->size()) {
+                            foreach my $ind ($indicators->get_nodelist) {
+                                my $which = 'ind' . $ind->getAttribute('which');
+                                my $value = $ind->getAttribute('value');
+                                print("$which $value\n");
+                                $field->update($which => $value);
+                            }
                         }
                     }
                 }
