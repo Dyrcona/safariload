@@ -395,6 +395,7 @@ sub delete_record {
     my $e = new_editor(authtoken => $authtoken);
     my $bre = $e->retrieve_biblio_record_entry($id);
     if ($bre) {
+        $e->xact_begin;
         my $acns = $e->search_asset_call_number({'record' => $id});
         if ($acns && @$acns) {
             foreach my $acn (@$acns) {
@@ -402,8 +403,6 @@ sub delete_record {
                 if ($auricnms && @$auricnms) {
                     my @auris;
                     # Delete the asset.uri_call_number_map entries first.
-                    # Everything has to be done in its own transaction, thank you PostgreSQL!
-                    $e->xact_begin;
                     foreach my $auricnm (@$auricnms) {
                         push(@auris, $auricnm->uri);
                         unless ($e->delete_asset_uri_call_number_map($auricnm)) {
@@ -411,15 +410,8 @@ sub delete_record {
                             last;
                         }
                     }
-                    if ($r eq 'SUCCESS') {
-                        $e->xact_commit;
-                    }
-                    else {
-                        $e->xact_rollback;
-                        last;
-                    }
+                    last unless ($r eq 'SUCCESS');
                     # Now, delete the asset.uri entries
-                    $e->xact_begin;
                     foreach my $uri (@auris) {
                         my $auri = $e->retrieve_asset_uri($uri);
                         if ($auri) {
@@ -429,26 +421,15 @@ sub delete_record {
                             }
                         }
                     }
-                    if ($r eq 'SUCCESS') {
-                        $e->xact_commit;
-                    }
-                    else {
-                        $e->xact_rollback;
-                        last;
-                    }
+                    last unless ($r eq 'SUCCESS');
                 } else {
                     unless ($e->event->{textcode} eq 'ASSET_URI_CALL_NUMBER_MAP_NOT_FOUND') {
                         $r = $e->event->{textcode};
                         last;
                     }
                 }
-                $e->xact_begin;
-                if ($e->delete_asset_call_number($acn)) {
-                    $e->xact_commit;
-                }
-                else {
+                unless ($e->delete_asset_call_number($acn)) {
                     $r = $e->event->{textcode};
-                    $e->xact_rollback;
                     last;
                 }
             }
@@ -457,14 +438,11 @@ sub delete_record {
                 $r = $e->event->{textcode};
             }
         }
-        if ($r eq 'SUCCESS') {
-            $e->xact_begin;
-            if ($e->delete_biblio_record_entry($bre)) {
-                $e->xact_commit;
-            } else {
-                $r = $e->event->{textcode};
-                $e->xact_rollback;
-            }
+        if ($r eq 'SUCCESS' && $e->delete_biblio_record_entry($bre)) {
+            $e->xact_commit;
+        } else {
+            $r = $e->event->{textcode};
+            $e->xact_rollback;
         }
     } else {
         $r = $e->event->{textcode};
