@@ -33,14 +33,11 @@ my ($download_type, $config_file, $fname);
 foreach my $arg (@ARGV) {
     if ($arg eq '--full') {
         $download_type = 'full';
-    }
-    elsif ($arg =~ /^--config(?:_file)?=(.+)/) {
+    } elsif ($arg =~ /^--config(?:_file)?=(.+)/) {
         $config_file = $1;
-    }
-    elsif ($arg =~ /^--file=(.+)/) {
+    } elsif ($arg =~ /^--file=(.+)/) {
         $fname = $1;
-    }
-    else {
+    } else {
         die("Unknown command line option: $arg");
     }
 }
@@ -102,13 +99,11 @@ while (my $record = $marc_file->next()) {
                     my $with = $config->findvalue('with', $trans)->value();
                     if ($match) {
                         $value =~ s/$match/$with/ee;
-                    }
-                    else {
+                    } else {
                         $value = $with;
                     }
                     $record->leader($value);
-                }
-                elsif (MARC::Field->is_controlfield_tag($tag)) {
+                } elsif (MARC::Field->is_controlfield_tag($tag)) {
                     my $field = $record->field($tag);
                     my $match = $config->findvalue('match', $trans)->value();
                     my $with = $config->findvalue('with', $trans)->value();
@@ -119,13 +114,11 @@ while (my $record = $marc_file->next()) {
                                 $value =~ s/$match/$with/ee;
                                 $field->update($value);
                             }
-                        }
-                        else {
+                        } else {
                             $field->update($with);
                         }
                     }
-                }
-                else {
+                } else {
                     my $ind1 = $trans->getAttribute('ind1');
                     my $ind2 = $trans->getAttribute('ind2');
                     my $subs = $config->find('subfield', $trans);
@@ -145,8 +138,7 @@ while (my $record = $marc_file->next()) {
                                         $value =~ s/$match/$with/ee;
                                         $field->update($code => $value);
                                     }
-                                }
-                                else {
+                                } else {
                                     $field->update($code => $with) if ($field->subfield($code));
                                 }
                             }
@@ -160,8 +152,7 @@ while (my $record = $marc_file->next()) {
                         }
                     }
                 }
-            }
-            elsif ($trans->getLocalName() eq "add") {
+            } elsif ($trans->getLocalName() eq "add") {
                 my $tag = $trans->getAttribute("tag");
                 next unless $tag;
                 # Currently, we only allow adding subfields, not whole
@@ -193,15 +184,13 @@ while (my $record = $marc_file->next()) {
         my $matches = get_matching_bibs($record);
         if (ref($matches) eq 'HASH') {
             print("$goal: " . $matches->{textcode} . " looking up match\n");
-        }
-        else {
+        } else {
             foreach my $match (@$matches) {
-                my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record_entry.delete', $authtoken, $match->{'record'});
-                if (ref($r) eq 'HASH') {
-                    print("$goal: " . $r->{textcode} . " deleting matching bre " . $match->{'record'} . "\n");
-                }
-                else {
+                my $r = delete_record($match->{record});
+                if ($r eq 'SUCCESS') {
                     print("$goal: deleted matching bre " . $match->{'record'} . "\n");
+                } else {
+                    print("$goal: $r deleting matching bre " . $match->{'record'} . "\n");
                 }
             }
         }
@@ -216,12 +205,10 @@ while (my $record = $marc_file->next()) {
                                                           $authtoken, $xml, $source->source, 1);
         if (ref($r) eq 'HASH') {
             print($r->{textcode} . "\n");
-        }
-        elsif (ref($r) eq 'Fieldmapper::biblio::record_entry') {
+        } elsif (ref($r) eq 'Fieldmapper::biblio::record_entry') {
             print($r->id . ' ' . $r->source . "\n");
             $count++;
-        }
-        else {
+        } else {
             print("$r\n");
         }
     }
@@ -257,8 +244,7 @@ sub download_file {
                 next unless ($child->isa("XML::XPath::Node::Element"));
                 $account{$child->getLocalName()} = $child->string_value();
             }
-        }
-        elsif ($name eq "login") {
+        } elsif ($name eq "login") {
             foreach my $child (@$children) {
                 next unless ($child->isa("XML::XPath::Node::Element"));
                 $login{$child->getLocalName()} = $child->string_value();
@@ -266,8 +252,7 @@ sub download_file {
                     $login{'method'} = $child->getAttribute("method");
                 }
             }
-        }
-        elsif ($name eq "download") {
+        } elsif ($name eq "download") {
             foreach my $child ($config->find("$download_type/url", $node)->get_nodelist()) {
                 next unless ($child->isa('XML::XPath::Node::Element'));
                 $download{'url'} = $child->string_value();
@@ -284,8 +269,7 @@ sub download_file {
     delete $login{'method'};
     if ($method eq 'post') {
         $response = $lwp->post($url, \%login);
-    }
-    else {
+    } else {
         my $i = 0;
         foreach my $key (keys %login) {
             $url .= sprintf("%s%s=%s", ($i++ == 0) ? '?' : '&', $key, $login{$key});
@@ -306,17 +290,14 @@ sub download_file {
                 if (open($fh, ">$filename")) {
                     print $fh $r->content;
                     close($fh);
-                }
-                else {
+                } else {
                     die ("She canno' do't, Captain!");
                 }
-            }
-            else {
+            } else {
                 die $r->status_line . "\n";
             }
         }
-    }
-    else {
+    } else {
         die $response->status_line . "\n";
     }
     return $filename;
@@ -389,8 +370,8 @@ sub delete_all_from_source {
     my $goal = scalar @bibs;
     my $count = 0;
     foreach my $bib (@bibs) {
-        my $r = OpenILS::Application::AppUtils->simplereq('open-ils.cat', 'open-ils.cat.biblio.record_entry.delete', $authtoken, $bib->id);
-        $count++ unless (ref($r));
+        my $r = delete_record($bib->id);
+        $count++ if ($r eq 'SUCCESS');
     }
     print("Deleted $count of $goal bibs.\n");
 }
@@ -404,4 +385,90 @@ sub convert2marcxml {
     $xml = OpenILS::Application::AppUtils->entityize($xml);
     $xml =~ s/[\x00-\x1f]//go;
     return $xml;
+}
+
+# Delete the biblio.record_entry entries, asset.call_number entries,
+# asset.uri_call_number_map entries, and asset.uri entries (if any).
+sub delete_record {
+    my $id = shift;
+    my $r = 'SUCCESS';
+    my $e = new_editor(authtoken => $authtoken);
+    my $bre = $e->retrieve_biblio_record_entry($id);
+    if ($bre) {
+        my $acns = $e->search_asset_call_number({'record' => $id});
+        if ($acns && @$acns) {
+            foreach my $acn (@$acns) {
+                my $auricnms = $e->search_asset_uri_call_number_map({'call_number' => $acn->id});
+                if ($auricnms && @$auricnms) {
+                    my @auris;
+                    # Delete the asset.uri_call_number_map entries first.
+                    # Everything has to be done in its own transaction, thank you PostgreSQL!
+                    $e->xact_begin;
+                    foreach my $auricnm (@$auricnms) {
+                        push(@auris, $auricnm->uri);
+                        unless ($e->delete_asset_uri_call_number_map($auricnm)) {
+                            $r = $e->event->{textcode};
+                            last;
+                        }
+                    }
+                    if ($r eq 'SUCCESS') {
+                        $e->xact_commit;
+                    }
+                    else {
+                        $e->xact_rollback;
+                        last;
+                    }
+                    # Now, delete the asset.uri entries
+                    $e->xact_begin;
+                    foreach my $uri (@auris) {
+                        my $auri = $e->retrieve_asset_uri($uri);
+                        if ($auri) {
+                            unless ($e->delete_asset_uri($auri)) {
+                                $r = $e->event->{textcode};
+                                last;
+                            }
+                        }
+                    }
+                    if ($r eq 'SUCCESS') {
+                        $e->xact_commit;
+                    }
+                    else {
+                        $e->xact_rollback;
+                        last;
+                    }
+                } else {
+                    unless ($e->event->{textcode} eq 'ASSET_URI_CALL_NUMBER_MAP_NOT_FOUND') {
+                        $r = $e->event->{textcode};
+                        last;
+                    }
+                }
+                $e->xact_begin;
+                if ($e->delete_asset_call_number($acn)) {
+                    $e->xact_commit;
+                }
+                else {
+                    $r = $e->event->{textcode};
+                    $e->xact_rollback;
+                    last;
+                }
+            }
+        } else {
+            unless ($e->event->{textcode} eq 'ASSET_CALL_NUMBER_NOT_FOUND') {
+                $r = $e->event->{textcode};
+            }
+        }
+        if ($r eq 'SUCCESS') {
+            $e->xact_begin;
+            if ($e->delete_biblio_record_entry($bre)) {
+                $e->xact_commit;
+            } else {
+                $r = $e->event->{textcode};
+                $e->xact_rollback;
+            }
+        }
+    } else {
+        $r = $e->event->{textcode};
+    }
+    $e->finish();
+    return $r;
 }
