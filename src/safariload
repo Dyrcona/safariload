@@ -26,6 +26,7 @@ use OpenILS::Utils::Fieldmapper;
 use OpenILS::Utils::CStoreEditor qw/:funcs/;
 use OpenILS::Application::AppUtils;
 use XML::XPath;
+use UNIVERSAL qw/isa/;
 
 #globals that can be set from the commmand line.
 my ($download_type, $config_file, $fname);
@@ -370,7 +371,7 @@ sub delete_all_from_source {
     my $goal = scalar @bibs;
     my $count = 0;
     foreach my $bib (@bibs) {
-        my $r = delete_record($bib->id);
+        my $r = delete_record($bib);
         $count++ if ($r eq 'SUCCESS');
     }
     print("Deleted $count of $goal bibs.\n");
@@ -390,13 +391,19 @@ sub convert2marcxml {
 # Delete the biblio.record_entry entries, asset.call_number entries,
 # asset.uri_call_number_map entries, and asset.uri entries (if any).
 sub delete_record {
-    my $id = shift;
+    my $input = shift;
     my $r = 'SUCCESS';
     my $e = new_editor(authtoken => $authtoken);
-    my $bre = $e->retrieve_biblio_record_entry($id);
-    if ($bre) {
+    my $bre;
+    if (isa($input, 'Fieldmapper::biblio::record_entry')) {
+        $bre = $input;
+    } else {
+        $bre = $e->retrieve_biblio_record_entry($input);
+        $r = $e->event->{textcode} unless ($bre);
+    }
+    if ($r eq 'SUCCESS') {
         $e->xact_begin;
-        my $acns = $e->search_asset_call_number({'record' => $id});
+        my $acns = $e->search_asset_call_number({'record' => $bre->id});
         if ($acns && @$acns) {
             foreach my $acn (@$acns) {
                 my $auricnms = $e->search_asset_uri_call_number_map({'call_number' => $acn->id});
@@ -444,8 +451,6 @@ sub delete_record {
             $r = $e->event->{textcode};
             $e->xact_rollback;
         }
-    } else {
-        $r = $e->event->{textcode};
     }
     $e->finish();
     return $r;
