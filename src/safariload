@@ -71,6 +71,12 @@ my $source = OpenILS::Application::AppUtils->storagereq('open-ils.storage.direct
 # Delete everything if we're doing a full replacement load.
 delete_all_from_source($source) if ($download_type eq 'full');
 
+# Global flags set in the database to control how control numbers are
+# stored. We need to set these for the get_matching_bibs function to
+# work properly.
+my ($use_id_for_tcn, $maintain_control_numbers);
+set_global_flags() if ($download_type eq 'update');
+
 # Keep a count of the loaded records.
 my $count = 0;
 my $goal = 0;
@@ -339,21 +345,27 @@ sub oils_login {
 sub get_matching_bibs {
     my $input = shift;
     my $cn = $input->field('001')->data();
-    $cn =~ s/[^0-9]+//g;
     my $sid = $source->id;
     my $q =
         {
          'select' => { 'mfr' => [ 'record'] },
          'from' => { 'mfr' => 'bre' },
-         'where' =>
-         {
-          'subfield' => 'a',
-          'tag' => '035',
-          'value' => { 'like' => '%' . $cn . '%' },
-          '+bre' => { 'deleted' => 'f', 'source' => $sid }
-         },
-         'distinct' => 'true'
+         'where' => { '+bre' => { 'deleted' => 'f', 'source' => $sid } }
         };
+    if ($use_id_for_tcn) {
+        # We probably ought to check $maintain_control_numbers here
+        # and find some other field to match on if it is false. I'll
+        # leave that as an exercise for another day. Right now, this
+        # works for me.
+        $cn =~ s/[^0-9]+//g;
+        $q->{'where'}->{'subfield'} = 'a';
+        $q->{'where'}->{'tag'} = '035';
+        $q->{'where'}->{'value'} = { 'like' => '%' . $cn . '%' };
+        $q->{'distinct'} = 'true';
+    } else {
+        $q->{'where'}->{'tag'} = '001';
+        $q->{'where'}->{'value'} = { 'like' => '%' . $cn . '%' };
+    }
     my $e = new_editor(authtoken => $authtoken);
     my $recs = $e->json_query($q);
     return $e->{event} unless ($recs);
@@ -454,4 +466,24 @@ sub delete_record {
     }
     $e->finish();
     return $r;
+}
+
+# Sets global flags $use_id_for_tcn and $maintain_control_numbers from
+# cgf for the get_matching_bibs function.
+sub set_global_flags {
+    my $editor = new_editor(authtoken => $authtoken);
+    my $q = {
+             'select' => {'cgf' => [ 'name', 'enabled' ] },
+             'from' => 'cgf',
+             'where' => { 'name' => [ 'cat.bib.use_id_for_tcn', 'cat.maintain_control_numbers' ] }
+            };
+    my $rows = $editor->json_query($q);
+    foreach my $row (@$rows) {
+        if ($row->{name} eq 'cat.bib.use_id_for_tcn') {
+            $use_id_for_tcn = OpenILS::Application::AppUtils->is_true($row->{enabled});
+        } elsif ($row->{name} eq 'cat.maintain_control_numbers') {
+            $maintain_control_numbers = OpenILS::Application::AppUtils->is_true($row->{enabled});
+        }
+    }
+    $editor->finish();
 }
