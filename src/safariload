@@ -26,7 +26,6 @@ use OpenILS::Utils::Fieldmapper;
 use OpenILS::Utils::CStoreEditor qw/:funcs/;
 use OpenILS::Application::AppUtils;
 use XML::XPath;
-use UNIVERSAL qw/isa/;
 
 #globals that can be set from the commmand line.
 my ($download_type, $config_file, $fname);
@@ -407,7 +406,7 @@ sub delete_record {
     my $r = 'SUCCESS';
     my $e = new_editor(authtoken => $authtoken);
     my $bre;
-    if (isa($input, 'Fieldmapper::biblio::record_entry')) {
+    if (UNIVERSAL::isa($input, 'Fieldmapper::biblio::record_entry')) {
         $bre = $input;
     } else {
         $bre = $e->retrieve_biblio_record_entry($input);
