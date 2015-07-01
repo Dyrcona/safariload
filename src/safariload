@@ -80,6 +80,10 @@ set_global_flags() if ($download_type eq 'update');
 my $count = 0;
 my $goal = 0;
 
+# Make sure we have a downloaded file before we proceed.
+die("$fname not found") unless (-e $fname);
+die("$fname is zero bytes") if (-z $fname);
+
 # We are now ready to process the downloaded MARC file.
 my $marc_file = MARC::File::USMARC->in($fname);
 
