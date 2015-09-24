@@ -461,10 +461,10 @@ sub delete_record {
             }
         }
         if ($r eq 'SUCCESS' && $e->delete_biblio_record_entry($bre)) {
-            $e->xact_commit;
+            $e->commit;
         } else {
             $r = $e->event->{textcode};
-            $e->xact_rollback;
+            $e->rollback;
         }
     }
     $e->finish();
